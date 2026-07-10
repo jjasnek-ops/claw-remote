@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Claw</title>
+    <link rel="icon" type="image/svg+xml" href="static/favicon.svg?v={{asset_version}}">
+    <link rel="stylesheet" href="static/css/app.css?v={{asset_version}}">
+</head>
+<body data-refresh-interval="{{refresh_interval}}">
+    <div class="header">
+        <h1>
+            <span class="mode-switch">
+                <a href="/claude/" id="modeClaude">Claude</a>
+                <a href="/codex/" id="modeCodex">Codex</a>
+                <a href="/default/" id="modeDefault">Default</a>
+            </span>
+            <svg width="28" height="28" viewBox="0 0 100 100" style="margin-right: 4px;">
+                <!-- Claw mark - three scratches -->
+                <path d="M 20 15 Q 25 50 35 90" stroke="#a371f7" stroke-width="10" stroke-linecap="round" fill="none"/>
+                <path d="M 45 10 Q 50 50 50 95" stroke="#a371f7" stroke-width="10" stroke-linecap="round" fill="none"/>
+                <path d="M 70 15 Q 65 50 55 90" stroke="#a371f7" stroke-width="10" stroke-linecap="round" fill="none"/>
+                <!-- Shine effects -->
+                <path d="M 22 20 Q 26 40 33 60" stroke="#c9b1fa" stroke-width="3" stroke-linecap="round" fill="none"/>
+                <path d="M 47 15 Q 50 40 50 65" stroke="#c9b1fa" stroke-width="3" stroke-linecap="round" fill="none"/>
+                <path d="M 68 20 Q 64 40 57 60" stroke="#c9b1fa" stroke-width="3" stroke-linecap="round" fill="none"/>
+            </svg>
+            <span class="status-dot" id="statusDot"></span>
+            Claw
+        </h1>
+        <div class="header-actions">
+            <button class="nav-menu-btn desktop-only" id="gitMenuBtn" onclick="toggleDropdown('gitCard')" aria-expanded="false">
+                <span>Git</span>
+                <span class="nav-menu-meta" id="navGitSummary">-</span>
+            </button>
+            <button class="nav-menu-btn desktop-only" id="processMenuBtn" onclick="toggleDropdown('processCard')" aria-expanded="false">
+                <span>Processes</span>
+                <span class="nav-menu-meta" id="navProcessSummary">-</span>
+            </button>
+            <button class="refresh-btn" id="refreshBtn" onclick="refreshData({ showLoading: true })">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 4v6h-6M1 20v-6h6"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+                <span id="refreshText">Refresh</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="pull-indicator" id="pullIndicator">Pull to refresh</div>
+
+    <div class="container app-shell">
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="statSessions">-</div>
+                <div class="stat-label">Sessions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statCpu">-</div>
+                <div class="stat-label">CPU</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statMemory">-</div>
+                <div class="stat-label">Memory</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statDisk">-</div>
+                <div class="stat-label">Disk</div>
+            </div>
+        </div>
+
+        <div class="toast" id="toast"></div>
+
+        <div class="card" id="terminalCard">
+            <div class="card-header" onclick="toggleCard('terminalCard')">
+                <span class="card-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+                    </svg>
+                    Live Terminal
+                    <span class="card-badge" id="terminalSession">-</span>
+                </span>
+                <select class="terminal-lines-select" id="terminalCaptureLinesSelect" aria-label="Terminal capture lines">
+                    <option value="200">200 lines</option>
+                    <option value="400">400 lines</option>
+                    <option value="800">800 lines</option>
+                    <option value="1600">1600 lines</option>
+                </select>
+                <span class="card-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </span>
+            </div>
+            <div class="card-content">
+                <div class="terminal" id="terminalContent">Loading...</div>
+            </div>
+        </div>
+
+        <div class="input-panel" id="inputPanel">
+            <div class="input-header">
+                <span class="input-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Send to Claude
+                </span>
+                <span class="target-badge" id="inputTarget">-</span>
+                <span class="plan-mode-badge" id="planModeBadge" style="display:none">PLAN</span>
+            </div>
+            <div class="image-attachments" id="imageAttachments" hidden></div>
+            <textarea class="input-area" id="inputText" placeholder="Type your message to Claude Code..." rows="2"></textarea>
+            <input id="imageFileInput" type="file" accept="image/*" multiple hidden>
+            <div class="quick-actions">
+                <button class="quick-btn composer-popover-trigger" type="button" id="historyPopoverBtn" aria-expanded="false">History</button>
+                <button class="quick-btn composer-popover-trigger" type="button" id="promptsPopoverBtn" aria-expanded="false">Custom prompts</button>
+                <button class="quick-btn" type="button" id="imageAttachBtn">Image</button>
+                <button class="quick-btn" onclick="sendQuick('yes')">yes</button>
+                <button class="quick-btn" onclick="sendQuick('y')">y</button>
+                <button class="quick-btn" onclick="sendQuick('no')">no</button>
+                <button class="quick-btn" onclick="sendQuick('continue')">continue</button>
+                <button class="quick-btn" onclick="sendQuick('/plan')">plan</button>
+                <button class="quick-btn" onclick="sendAcceptEdit()">acceptEdit</button>
+                <button class="quick-btn" onclick="sendQuick('/compact')">compact</button>
+                <button class="quick-btn" onclick="sendQuick('/clear').then(() => sendQuick('/plan'))">clear</button>
+                <button class="quick-btn danger" onclick="sendControl('C-c')">Ctrl+C</button>
+            </div>
+            <div class="composer-popover" id="historyPopover" hidden>
+                <div class="composer-section-header">
+                    <span>History</span>
+                    <span class="composer-section-meta">current session</span>
+                </div>
+                <div class="input-history" id="inputHistory"></div>
+            </div>
+            <div class="composer-popover" id="promptsPopover" hidden>
+                <div class="composer-section-header">
+                    <span>Custom prompts</span>
+                    <button class="composer-link-btn" type="button" id="customPromptAddBtn">Add</button>
+                </div>
+                <div class="custom-prompt-list" id="customPromptList"></div>
+                <div class="custom-prompt-editor" id="customPromptEditor" hidden>
+                    <input class="custom-prompt-title" id="customPromptTitle" type="text" maxlength="80" placeholder="Prompt title">
+                    <textarea class="custom-prompt-text" id="customPromptText" rows="3" placeholder="Prompt text"></textarea>
+                    <div class="custom-prompt-actions">
+                        <button class="quick-btn" type="button" id="customPromptSaveBtn">Save</button>
+                        <button class="quick-btn danger" type="button" id="customPromptDeleteBtn" hidden>Delete</button>
+                        <button class="quick-btn" type="button" id="customPromptCancelBtn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+            <div class="input-actions">
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                    </svg>
+                    Send
+                </button>
+            </div>
+        </div>
+
+        <div class="card" id="sessionsCard">
+            <div class="card-header" onclick="toggleCard('sessionsCard')">
+                <span class="card-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                    </svg>
+                    Tmux Sessions
+                </span>
+                <button class="sidebar-collapse-btn desktop-only" id="sidebarCollapseBtn" onclick="toggleSidebar(event)" aria-label="Collapse sidebar" aria-expanded="true">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <span class="card-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </span>
+            </div>
+            <div class="card-content">
+                <div class="session-toolbar" id="sessionToolbar"></div>
+                <div class="session-list" id="sessionList">Loading...</div>
+            </div>
+        </div>
+        <div class="sidebar-resizer desktop-only" id="sidebarResizer" aria-hidden="true"></div>
+        <div class="prompt-terminal-resizer desktop-only" id="promptTerminalResizer" aria-hidden="true"></div>
+
+        <aside class="session-prompt-panel" id="sessionPromptPanel" aria-hidden="true">
+            <div class="session-prompt-header">
+                <div>
+                    <div class="session-prompt-title">提示词计划</div>
+                    <div class="session-prompt-session" id="sessionPromptSessionName">-</div>
+                    <div class="session-prompt-status" id="sessionPromptSaveStatus" hidden></div>
+                </div>
+                <div class="session-prompt-header-actions">
+                    <label class="session-prompt-label" for="sessionPromptText" id="sessionPromptTextLabel">后续提示词想法</label>
+                    <button class="quick-btn" type="button" id="sessionPromptPlanTemplateToggleBtn" aria-expanded="false">编辑计划模板</button>
+                    <button class="quick-btn" type="button" id="sessionPromptPromptsBtn" aria-expanded="false">常用提示词</button>
+                    <button class="quick-btn" type="button" id="promptOptimizeTemplateToggleBtn" aria-expanded="false">优化指令</button>
+                    <button class="quick-btn" type="button" id="promptOptimizeTemplateSaveBtn">保存模板</button>
+                    <button class="quick-btn" type="button" id="sessionPromptImageAttachBtn">添加图片</button>
+                    <button class="quick-btn" type="button" id="sessionPromptQuickSendBtn">发送 prompt</button>
+                    <button class="quick-btn" type="button" id="sessionPromptCopyBtn">发送到计划模式</button>
+                    <button class="quick-btn" type="button" id="promptOptimizeSendBtn">优化提示词</button>
+                    <button class="sidebar-collapse-btn desktop-only" id="terminalDockToggleBtn" type="button" aria-label="展开或收起实时终端" aria-expanded="false">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                    <button class="quick-btn" type="button" id="sessionPromptCloseBtn">关闭</button>
+                </div>
+            </div>
+            <div class="composer-popover session-prompt-prompts-popover" id="sessionPromptPromptsPopover" hidden>
+                <div class="composer-section-header">
+                    <span>常用提示词</span>
+                    <span class="composer-section-meta">插入到当前光标位置</span>
+                </div>
+                <div class="custom-prompt-list" id="sessionPromptCustomPromptList"></div>
+            </div>
+            <div class="image-attachments session-prompt-image-attachments" id="sessionPromptImageAttachments" hidden></div>
+            <input id="sessionPromptImageFileInput" type="file" accept="image/*" multiple hidden>
+            <textarea class="session-prompt-textarea" id="sessionPromptText" rows="10" placeholder="记录这个 session 后续要执行的提示词计划..."></textarea>
+            <div class="prompt-optimize-template-panel" id="promptOptimizeTemplatePanel">
+                <div class="session-prompt-template-header">
+                    <label class="session-prompt-label" for="promptOptimizeTemplate">模板</label>
+                    <select class="prompt-template-scope" id="promptOptimizeTemplateScope" aria-label="提示词优化模板作用范围">
+                        <option value="session">当前 session</option>
+                        <option value="global">全局</option>
+                    </select>
+                </div>
+                <textarea class="prompt-optimize-template" id="promptOptimizeTemplate" rows="7" placeholder="发送给当前会话用于优化提示词的固定指令..."></textarea>
+            </div>
+        </aside>
+
+        <div class="card nav-popover-card" id="gitCard">
+            <div class="card-header" onclick="toggleCard('gitCard')">
+                <span class="card-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="7" y2="12"/><line x1="17.01" y1="12" x2="22.96" y2="12"/>
+                    </svg>
+                    Git Status
+                    <span class="branch-badge" id="gitBranch">-</span>
+                </span>
+                <span class="card-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </span>
+            </div>
+            <div class="card-content">
+                <div class="git-changes" id="gitChanges"></div>
+                <div class="commit-list" id="commitList">Loading...</div>
+            </div>
+        </div>
+
+        <div class="card nav-popover-card collapsed" id="processCard">
+            <div class="card-header" onclick="toggleCard('processCard')">
+                <span class="card-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/>
+                    </svg>
+                    Claude Processes
+                </span>
+                <span class="card-chevron">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"/>
+                    </svg>
+                </span>
+            </div>
+            <div class="card-content">
+                <div class="process-list" id="processList">Loading...</div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <span class="time" id="lastUpdate">-</span>
+            <br>Auto-refresh: <span id="refreshInterval">{{refresh_interval}}</span>s
+        </div>
+    </div>
+    <script defer src="static/js/app.js?v={{asset_version}}"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+:8080 {
+  redir / /default/ 302
+  redir /claude /claude/
+  redir /codex /codex/
+  redir /default /default/
+
+  handle / {
+    root * /srv
+    file_server
+  }
+
+  handle_path /claude/* {
+    reverse_proxy 172.19.0.1:18084
+  }
+
+  handle_path /codex/* {
+    reverse_proxy 172.19.0.1:18085
+  }
+
+  handle_path /default/* {
+    reverse_proxy 172.19.0.1:18086
+  }
+}

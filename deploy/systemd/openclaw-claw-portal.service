@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenClaw Claw Remote Portal
+After=docker.service network-online.target openclaw-claw-claude.service openclaw-claw-codex.service openclaw-claw-default.service
+Wants=docker.service network-online.target openclaw-claw-claude.service openclaw-claw-codex.service openclaw-claw-default.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/skills/coding-agent/portal
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose stop
+RemainAfterExit=yes
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
