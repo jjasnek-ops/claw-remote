@@ -5,7 +5,7 @@ Wants=docker.service network-online.target openclaw-claw-claude.service openclaw
 
 [Service]
 Type=oneshot
-WorkingDirectory=/root/.openclaw/skills/coding-agent/portal
+WorkingDirectory=/root/.openclaw/skills/claw-remote/portal
 ExecStart=/usr/bin/docker compose up -d --remove-orphans
 ExecStop=/usr/bin/docker compose stop
 RemainAfterExit=yes

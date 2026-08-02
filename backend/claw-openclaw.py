@@ -1011,9 +1011,24 @@ class CommandSender:
     MAX_TEXT_LENGTH = 10000
     ALLOWED_SESSION_COMMANDS = {
         'bash': ['bash'],
-        'claude': ['/usr/local/bin/claude', '--permission-mode', 'acceptEdits'],
+        # Claude Code may also be installed by npm/nvm. Resolve it through the
+        # login shell, then clear custom Anthropic routing again inside that
+        # shell so the official Claude login is not silently overridden by
+        # values sourced from .profile/.bashrc.
+        'claude': [
+            'bash', '-lic',
+            'unset ANTHROPIC_MODEL CLAUDE_AUTOCOMPACT_PCT_OVERRIDE '
+            'ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY '
+            'ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL '
+            'ANTHROPIC_DEFAULT_HAIKU_MODEL; '
+            'exec claude --permission-mode acceptEdits',
+        ],
         'glm': ['/usr/local/bin/claude', '--permission-mode', 'acceptEdits'],
-        'codex': ['codex', '--dangerously-bypass-approvals-and-sandbox'],
+        # Codex is commonly installed by npm/nvm. systemd does not load the
+        # user's shell profile, so a bare `codex` can be missing from PATH even
+        # though it works in an interactive terminal. Resolve it through a
+        # login shell and replace that shell with the Codex TUI.
+        'codex': ['bash', '-lic', 'exec codex --dangerously-bypass-approvals-and-sandbox'],
         'hermes': ['/usr/local/bin/hermes', 'chat'],
     }
 
@@ -1061,6 +1076,86 @@ class CommandSender:
         if result.returncode != 0:
             return ''
         return result.stdout.strip()
+
+    @staticmethod
+    def _pane_process_tree_contains(session_name, target, cli_name):
+        """Return True when the target pane process tree contains a CLI."""
+        try:
+            pane = subprocess.run(
+                tmux_cmd_for_session(session_name, 'display-message', '-p', '-t', target,
+                                     '#{pane_pid}'),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            pane_pid = pane.stdout.strip() if pane.returncode == 0 else ''
+            if not pane_pid.isdigit():
+                return False
+
+            processes = subprocess.run(
+                ['ps', '-eo', 'pid=,ppid=,cmd='],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if processes.returncode != 0:
+                return False
+
+            commands = {}
+            children = {}
+            for line in processes.stdout.splitlines():
+                parts = line.strip().split(None, 2)
+                if len(parts) != 3:
+                    continue
+                pid, ppid, cmdline = parts
+                commands[pid] = cmdline
+                children.setdefault(ppid, []).append(pid)
+
+            pending = [pane_pid]
+            seen = set()
+            while pending:
+                pid = pending.pop()
+                if pid in seen:
+                    continue
+                seen.add(pid)
+                pattern = rf'(?:^|\s|/){re.escape(cli_name)}(?:\.exe|\.js)?(?:\s|/|$)'
+                if re.search(pattern, commands.get(pid, ''), re.IGNORECASE):
+                    return True
+                pending.extend(children.get(pid, []))
+            return False
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_codex_pane(session_name, target):
+        return CommandSender._pane_process_tree_contains(session_name, target, 'codex')
+
+    @staticmethod
+    def _is_claude_pane(session_name, target):
+        return CommandSender._pane_process_tree_contains(session_name, target, 'claude')
+
+    @staticmethod
+    def _wait_for_session_process(session_name, command, timeout=6.0):
+        """Verify that the requested interactive CLI really owns the pane."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not CommandSender._session_exists(session_name):
+                return False
+            target_command = CommandSender._get_target_command(session_name)
+            if command == 'codex':
+                if CommandSender._is_codex_pane(session_name, session_name):
+                    return True
+            elif command in ('claude', 'glm') and (
+                target_command == 'claude'
+                or CommandSender._is_claude_pane(session_name, session_name)
+            ):
+                return True
+            elif command == 'hermes' and target_command == 'hermes':
+                return True
+            elif command == 'bash' and target_command in {'bash', 'sh', 'zsh'}:
+                return True
+            time.sleep(0.25)
+        return False
 
     @staticmethod
     def _is_ai_quick_command(text):
@@ -1121,9 +1216,10 @@ class CommandSender:
 
             # Optionally press Enter
             if press_enter:
-                # codex TUI 有粘贴检测：多行文本一次性灌入后，紧跟的 Enter 会被当成粘贴内容(换行)吞掉、不提交。
-                # 加一个短延迟让 codex 退出粘贴态，Enter 才会真正提交。claude/glm 无此问题，延迟无害。
-                if '\n' in sanitized_text and TMUX_SOCKET and 'codex-code.sock' in TMUX_SOCKET:
+                # Codex TUI applies paste detection to both single-line and
+                # multi-line text. An immediate Enter can be swallowed as part
+                # of the paste, leaving the prompt visible but not submitted.
+                if CommandSender._is_codex_pane(session_name, target):
                     time.sleep(0.4)
                 subprocess.run(tmux_cmd_for_session(session_name, 'send-keys', '-t', target, 'Enter'),
                              capture_output=True, timeout=5)
@@ -1437,6 +1533,28 @@ class CommandSender:
             )
             if result.returncode != 0:
                 return {'success': False, 'error': result.stderr.strip() or 'Failed to create session'}
+
+            # `tmux new-session -d` can return success even when its initial
+            # command exits immediately. Do not tell the UI that Codex was
+            # created until the requested process is actually alive.
+            if not CommandSender._wait_for_session_process(session_name, command):
+                if CommandSender._session_exists(session_name):
+                    subprocess.run(
+                        tmux_cmd_for_session(session_name, 'kill-session', '-t', session_name),
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        check=False,
+                    )
+                hint = ''
+                if command == 'codex':
+                    hint = ' Check that Codex CLI is installed and `codex login` has completed.'
+                elif command == 'claude':
+                    hint = ' Check that Claude Code is installed and its official login has completed.'
+                return {
+                    'success': False,
+                    'error': f'{command} exited or failed to start inside tmux.{hint}',
+                }
             CommandSender._apply_session_environment(session_name, command)
             # Defensive: also set via tmux set-environment for future windows/panes
             for k, v in (('CLAW_REMOTE_TMUX_SESSION', session_name), ('CLAW_REMOTE_SOURCE', 'claw-remote')):
