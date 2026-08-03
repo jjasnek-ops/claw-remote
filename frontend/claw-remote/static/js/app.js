@@ -7,6 +7,11 @@ let sidebarDragging = false;
 let activeSession = null;
 let activeWindow = null;
 let activePane = null;
+// Every pane fetch gets a monotonically increasing request id. Session/window/pane
+// switches invalidate older in-flight requests so a late response from the previous
+// target can never overwrite the terminal after the user has switched.
+let paneRequestSequence = 0;
+let latestPaneRequestId = 0;
 let sessionsData = [];
 let lastSessionsHash = '';  // track whether session list actually changed
 let expandedSessionDetails = new Set();
@@ -128,6 +133,26 @@ function togglePinSession(name) {
 function getComposerTargetKey() {
     if (!activeSession) return null;
     return [getCurrentMode(), activeSession, activeWindow ?? '_', activePane ?? '_'].join('|');
+}
+
+function beginPaneRequest() {
+    const requestId = ++paneRequestSequence;
+    latestPaneRequestId = requestId;
+    return { requestId, targetKey: getComposerTargetKey() };
+}
+
+function isCurrentPaneRequest(request) {
+    return request.requestId === latestPaneRequestId
+        && request.targetKey === getComposerTargetKey();
+}
+
+function showTerminalLoading() {
+    terminalRawContent = '';
+    const terminal = document.getElementById('terminalContent');
+    if (terminal) {
+        terminal.textContent = 'Loading session…';
+        terminal.scrollTop = 0;
+    }
 }
 
 function saveActiveTarget() {
@@ -2577,6 +2602,10 @@ async function selectSession(name) {
     markSessionStatusRead(name);
     activeWindow = null;
     activePane = null;
+    const paneRequest = beginPaneRequest();
+    showTerminalLoading();
+    updateSessionListActiveState();
+    scrollActiveSessionIntoView();
     saveActiveTarget();
     updateTerminalBadge();
     syncTerminalCaptureLinesSelect();
@@ -2584,18 +2613,19 @@ async function selectSession(name) {
     renderInputHistory();
     loadSentPromptHistory();
     await closeSessionPromptPanelForSelection();
-    terminalRawContent = '';
 
     try {
         const params = new URLSearchParams({ session: name, lines: String(getTerminalCaptureLines()) });
         const data = await fetchJson(`api/pane?${params.toString()}`);
-        renderTerminalContent(data.content);
+        if (isCurrentPaneRequest(paneRequest)) {
+            renderTerminalContent(data.content);
+        }
     } catch (e) {
         console.error('Failed to fetch pane:', e);
+        if (isCurrentPaneRequest(paneRequest)) {
+            document.getElementById('terminalContent').textContent = 'Failed to load session.';
+        }
     }
-
-    updateSessionListActiveState();
-    scrollActiveSessionIntoView();
 }
 
 // Select a specific window within a session
@@ -2606,6 +2636,10 @@ async function selectWindow(sessionName, windowIndex) {
     markSessionStatusRead(sessionName);
     activeWindow = windowIndex;
     activePane = null;
+    const paneRequest = beginPaneRequest();
+    showTerminalLoading();
+    updateSessionListActiveState();
+    scrollActiveSessionIntoView();
     saveActiveTarget();
     updateTerminalBadge();
     syncTerminalCaptureLinesSelect();
@@ -2613,18 +2647,19 @@ async function selectWindow(sessionName, windowIndex) {
     renderInputHistory();
     loadSentPromptHistory();
     await closeSessionPromptPanelForSelection();
-    terminalRawContent = '';
 
     try {
         const params = new URLSearchParams({ session: sessionName, window: windowIndex, lines: String(getTerminalCaptureLines()) });
         const data = await fetchJson(`api/pane?${params.toString()}`);
-        renderTerminalContent(data.content);
+        if (isCurrentPaneRequest(paneRequest)) {
+            renderTerminalContent(data.content);
+        }
     } catch (e) {
         console.error('Failed to fetch pane:', e);
+        if (isCurrentPaneRequest(paneRequest)) {
+            document.getElementById('terminalContent').textContent = 'Failed to load session.';
+        }
     }
-
-    updateSessionListActiveState();
-    scrollActiveSessionIntoView();
 }
 
 // Select a specific pane within a window
@@ -2635,6 +2670,10 @@ async function selectPane(sessionName, windowIndex, paneIndex) {
     markSessionStatusRead(sessionName);
     activeWindow = windowIndex;
     activePane = paneIndex;
+    const paneRequest = beginPaneRequest();
+    showTerminalLoading();
+    updateSessionListActiveState();
+    scrollActiveSessionIntoView();
     saveActiveTarget();
     updateTerminalBadge();
     syncTerminalCaptureLinesSelect();
@@ -2642,18 +2681,19 @@ async function selectPane(sessionName, windowIndex, paneIndex) {
     renderInputHistory();
     loadSentPromptHistory();
     await closeSessionPromptPanelForSelection();
-    terminalRawContent = '';
 
     try {
         const params = new URLSearchParams({ session: sessionName, window: windowIndex, pane: paneIndex, lines: String(getTerminalCaptureLines()) });
         const data = await fetchJson(`api/pane?${params.toString()}`);
-        renderTerminalContent(data.content);
+        if (isCurrentPaneRequest(paneRequest)) {
+            renderTerminalContent(data.content);
+        }
     } catch (e) {
         console.error('Failed to fetch pane:', e);
+        if (isCurrentPaneRequest(paneRequest)) {
+            document.getElementById('terminalContent').textContent = 'Failed to load session.';
+        }
     }
-
-    updateSessionListActiveState();
-    scrollActiveSessionIntoView();
 }
 
 function getSessionDisplayName(sessionName) {
@@ -2796,16 +2836,20 @@ async function refreshActivePane() {
         return;
     }
 
-    const params = new URLSearchParams({ session: activeSession, lines: String(getTerminalCaptureLines()) });
-    if (activeWindow !== null) {
-        params.set('window', activeWindow);
+    const requestedSession = activeSession;
+    const requestedWindow = activeWindow;
+    const requestedPane = activePane;
+    const paneRequest = beginPaneRequest();
+    const params = new URLSearchParams({ session: requestedSession, lines: String(getTerminalCaptureLines()) });
+    if (requestedWindow !== null) {
+        params.set('window', requestedWindow);
     }
-    if (activePane !== null) {
-        params.set('pane', activePane);
+    if (requestedPane !== null) {
+        params.set('pane', requestedPane);
     }
 
     const data = await fetchJson(`api/pane?${params.toString()}`, 0);
-    if (data.content !== undefined) {
+    if (isCurrentPaneRequest(paneRequest) && data.content !== undefined) {
         renderTerminalContent(data.content, true);
     }
 }
