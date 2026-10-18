@@ -1027,8 +1027,8 @@ class CommandSender:
         # Codex is commonly installed by npm/nvm. systemd does not load the
         # user's shell profile, so a bare `codex` can be missing from PATH even
         # though it works in an interactive terminal. Resolve it through a
-        # login shell and replace that shell with the Codex TUI.
-        'codex': ['bash', '-lic', 'exec codex --dangerously-bypass-approvals-and-sandbox'],
+        # login shell and replace that shell with the Codex TUI in YOLO mode.
+        'codex': ['bash', '-lic', 'exec codex --yolo'],
         'hermes': ['/usr/local/bin/hermes', 'chat'],
     }
 
@@ -2413,10 +2413,13 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(result)
 
         elif path == '/api/session/create':
+            requested_command = str(data.get('command') or '').strip()
+            if not requested_command and mode in {'claude', 'codex'}:
+                requested_command = mode
             result = CommandSender.create_session(
                 data.get('name', ''),
                 data.get('cwd') or '/root',
-                data.get('command') or 'bash',
+                requested_command or 'bash',
             )
             self._send_json(result)
 
@@ -3632,6 +3635,11 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             ).join('');
         }}
 
+        function automaticSessionCommand() {{
+            const mode = getCurrentMode();
+            return mode === 'claude' || mode === 'codex' ? mode : '';
+        }}
+
         // === Image handling ===
         const MAX_PENDING_IMAGES = 10;
         let pendingImages = [];
@@ -3911,8 +3919,9 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         }}
 
         async function createSession(command) {{
-            const suggested = defaultSessionName(command);
-            const name = prompt(`New ${{command}} session name`, suggested);
+            const sessionCommand = automaticSessionCommand() || command;
+            const suggested = defaultSessionName(sessionCommand);
+            const name = prompt(`New ${{sessionCommand}} session name`, suggested);
             if (!name) return;
 
             try {{
@@ -3921,7 +3930,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
                     headers: {{ 'Content-Type': 'application/json' }},
                     body: JSON.stringify({{
                         name: name.trim(),
-                        command: command,
+                        command: sessionCommand,
                         cwd: '/root'
                     }})
                 }});

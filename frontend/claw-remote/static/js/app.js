@@ -1685,6 +1685,11 @@ function renderSessionToolbar() {
     ).join('');
 }
 
+function automaticSessionCommand() {
+    const mode = getCurrentMode();
+    return mode === 'claude' || mode === 'codex' ? mode : '';
+}
+
 function isDesktopLayout() {
     return window.matchMedia('(min-width: 960px)').matches;
 }
@@ -1896,8 +1901,9 @@ async function sendMessage() {
 }
 
 async function createSession(command) {
-    const suggested = defaultSessionName(command);
-    const name = prompt(`New ${command} session name`, suggested);
+    const sessionCommand = automaticSessionCommand() || command;
+    const suggested = defaultSessionName(sessionCommand);
+    const name = prompt(`New ${sessionCommand} session name`, suggested);
     if (!name) return;
 
     try {
@@ -1906,7 +1912,7 @@ async function createSession(command) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 name: name.trim(),
-                command: command,
+                command: sessionCommand,
                 cwd: '/root'
             })
         });

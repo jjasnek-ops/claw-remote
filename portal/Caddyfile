@@ -9,15 +9,15 @@
     file_server
   }
 
-  handle_path /claude/* {
+  handle /claude/* {
     reverse_proxy 172.19.0.1:18084
   }
 
-  handle_path /codex/* {
+  handle /codex/* {
     reverse_proxy 172.19.0.1:18085
   }
 
-  handle_path /default/* {
+  handle /default/* {
     reverse_proxy 172.19.0.1:18086
   }
 }
